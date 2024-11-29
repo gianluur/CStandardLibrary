@@ -1,3 +1,5 @@
+#include "../context/compiler.h"
+
 #ifndef TYPES_H
   #define TYPES_H
 
@@ -27,6 +29,13 @@
 
   #define OVERFLOW NULL
   #define UNDERFLOW NULL
+
+  #if defined(COMPILER_CLANG) || defined(COMPILER_GCC)
+    #define typeof(type) __typeof__(type)
+  #elif defined(COMPILER_MSVC)
+    #define typeof(type) decltype(type)
+  #endif
+
 
   //======MAX & MIN VALUES======//
   #define MAXUINT8 255U

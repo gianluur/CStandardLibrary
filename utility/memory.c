@@ -1,7 +1,7 @@
 #include "memory.h"
 #include "types.h"
+#include "error.h"
 
-#include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
 
@@ -14,14 +14,6 @@
 //ALIGN(1) = 8, ALIGN(7) = 8, 
 //ALIGN(9) = 16, ALIGN(17) = 24
 #define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~(ALIGNMENT-1)) 
-
-typedef enum MemoryStatus{
-  SUCCESS,
-  FAILURE,
-  INVALID_SIZE,
-} MemoryStatus;
-
-static MemoryStatus memoryStatus = SUCCESS;
 
 typedef struct MemoryBlock {
   int64 size;
@@ -51,12 +43,12 @@ MemoryBlock *findFreeSpace(MemoryBlock **last, const int64 size){
 MemoryBlock *requestSpace(MemoryBlock *last, const int64 size){
   MemoryBlock *block = (MemoryBlock*)sbrk(0);
   if (block == (void*)-1){
-    memoryStatus = FAILURE;
+    errorcode = MEMORY_FAILURE;
     return NULL;
   }
 
   if (sbrk(ALIGN(BLOCK_SIZE + size)) == (void*)-1){
-    memoryStatus = FAILURE;
+    errorcode = MEMORY_FAILURE;
     return NULL;
   }
 
@@ -67,7 +59,7 @@ MemoryBlock *requestSpace(MemoryBlock *last, const int64 size){
   if (last)
     last->next = block;
   
-  memoryStatus = SUCCESS;
+  errorcode = MEMORY_SUCCESS;
   return block;
 }
 
@@ -83,7 +75,7 @@ void splitBlock(MemoryBlock *block, const uint64 size){
 
 void *memoryAllocate(const uint64 size){
   if (size <= 0 || size > MAXUINT64 - BLOCK_SIZE){ //checks if the size given is invalid
-    memoryStatus = INVALID_SIZE;
+    errorcode = MEMORY_FAILURE;
     return NULL;
   }
   
@@ -92,7 +84,7 @@ void *memoryAllocate(const uint64 size){
     block = requestSpace(NULL, size);
 
     if (!block){  // if the block is null, the request to the os failed
-      memoryStatus = FAILURE;
+      errorcode = MEMORY_FAILURE;
       return NULL;
     }
 
@@ -107,7 +99,7 @@ void *memoryAllocate(const uint64 size){
       block = requestSpace(last, size);
       
       if (block == NULL) {
-        memoryStatus = FAILURE;
+        errorcode = MEMORY_FAILURE;
         return NULL;
       }
     }
@@ -118,7 +110,7 @@ void *memoryAllocate(const uint64 size){
     }
   }
 
-  memoryStatus = SUCCESS;
+  errorcode = MEMORY_SUCCESS;
   return (block + 1); // returns the block of memory avoiding to return the block metadat as well. This is equal as block + sizeof(MemoryBlock)
 }
 
@@ -169,7 +161,7 @@ void *memoryReallocate(void* ptr, const uint64 new_size){
   if (new_size < block->size){ //if the reallocation wants to shrink the needed memory
     if (block->size - new_size > BLOCK_SIZE + MIN_BLOCK_SIZE) //try to split the block if the reduction is significant
       splitBlock(block, new_size);
-    memoryStatus = SUCCESS;
+    errorcode = MEMORY_SUCCESS;
     return ptr; //if not possible just return the ptr
   }
 
@@ -183,21 +175,21 @@ void *memoryReallocate(void* ptr, const uint64 new_size){
       if (block->size > new_size + BLOCK_SIZE + MIN_BLOCK_SIZE) //if the size is big enough split the block to the use the least memory free possible
         splitBlock(block, new_size);
     }
-    memoryStatus = SUCCESS;
+    errorcode = MEMORY_SUCCESS;
     return ptr;
   }
 
   else { // reallocate everything somewhere else, if no previous optimizaion worked
     void* new_ptr = memoryAllocate(new_size);
     if (!new_ptr){
-      memoryStatus = FAILURE;
+      errorcode = MEMORY_FAILURE;
       return NULL;
     }
 
     memoryCopy(ptr, block->size, new_ptr);
     memoryFree(ptr);
 
-    memoryStatus = SUCCESS;
+    errorcode = MEMORY_SUCCESS;
     return new_ptr;
   }
 }
@@ -205,42 +197,42 @@ void *memoryReallocate(void* ptr, const uint64 new_size){
 void *memoryCalloc(const uint64 nitems, const uint64 item_size){
   const uint64 size = nitems * item_size;
   if (size > MAXUINT64) { //add log
-    memoryStatus = FAILURE;
+    errorcode = MEMORY_FAILURE;
     return NULL;
   } 
 
   void *ptr = memoryAllocate(nitems * item_size);
   if (!ptr){
-    memoryStatus = FAILURE;
+    errorcode = MEMORY_FAILURE;
     return NULL;
   }
   zeroAllBytes(ptr, size);
 
 
-  memoryStatus = SUCCESS;
+  errorcode = MEMORY_SUCCESS;
   return ptr;
 }
 
 #endif
 
-int main(){
-  int* arr = (int*)memoryAllocate(3 * sizeof(int));
-  if (!arr)
-    printf("fuck");
-  else {
-    arr[0] = 1;
-    arr[1] = 2;
-    printf("YAY: %p, %p, %p, %p %d\n", arr, &arr[1], &arr[2], &arr[3], memoryStatus);
-  }
+// int main(){
+//   int* arr = (int*)memoryAllocate(3 * sizeof(int));
+//   if (!arr)
+//     printf("fuck");
+//   else {
+//     arr[0] = 1;
+//     arr[1] = 2;
+//     printf("YAY: %p, %p, %p, %p %d\n", arr, &arr[1], &arr[2], &arr[3], memoryStatus);
+//   }
 
-  memoryReallocate(arr, 5);
-  arr[4] = 4;
-  arr[5] = 5;
-  printf("Realloc: %p, %p\n", &arr[4], &arr[5]);
+//   memoryReallocate(arr, 5);
+//   arr[4] = 4;
+//   arr[5] = 5;
+//   printf("Realloc: %p, %p\n", &arr[4], &arr[5]);
 
-  int *arr2 = (int*)memoryCalloc(3, sizeof(int));
-  printf("Calloc: %p: %d, %p:%d\n", &arr2[0], arr2[0], &arr2[1], arr2[1]);
+//   int *arr2 = (int*)memoryCalloc(3, sizeof(int));
+//   printf("Calloc: %p: %d, %p:%d\n", &arr2[0], arr2[0], &arr2[1], arr2[1]);
 
-  memoryFree(arr);
-  printf("%d\n", arr[0]);
-}
+//   memoryFree(arr);
+//   printf("%d\n", arr[0]);
+// }
