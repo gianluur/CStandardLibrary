@@ -233,6 +233,6 @@ void *memoryCalloc(const uint64 nitems, const uint64 item_size){
 //   int *arr2 = (int*)memoryCalloc(3, sizeof(int));
 //   printf("Calloc: %p: %d, %p:%d\n", &arr2[0], arr2[0], &arr2[1], arr2[1]);
 
-//   memoryFree(arr);
+//   memorym(arr);
 //   printf("%d\n", arr[0]);
 // }
